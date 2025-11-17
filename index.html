@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Habit Accountability Tracker - Suraj & Sumit</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; background: #f4f7fc; color: #333; }
+  header { text-align: center; margin-bottom: 20px; }
+  h1 { color: #2c3e50; }
+  .user-toggle { margin-bottom: 20px; text-align: center; }
+  button { padding: 10px 20px; margin: 0 10px; border: none; background-color: #0077cc; color: white; cursor: pointer; border-radius: 4px; }
+  button.active { background-color: #005fa3; }
+  .tracker-form { background: white; padding: 20px; border-radius: 8px; max-width: 600px; margin: 0 auto 30px auto; box-shadow: 0 2px 6px rgba(0,0,0,0.1);}
+  label { display: block; margin: 8px 0 4px; font-weight: bold; }
+  input[type=number] { width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; }
+  .progress-bar { height: 16px; background: #eee; border-radius: 8px; overflow: hidden; margin-top: 4px; }
+  .progress-fill { height: 100%; background: #2ecc71; width: 0%; transition: width 0.4s ease; }
+  .progress-label { text-align: right; font-size: 0.8em; color: #555; }
+  .status { text-align: center; font-weight: bold; margin-bottom: 10px; }
+  #charts-container { max-width: 800px; margin: 0 auto; }
+  canvas { background: white; border-radius: 8px; margin-bottom: 30px; }
+  table { width: 90%; margin: 20px auto; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+  th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: center; }
+  th { background: #3498db; color: white; }
+  @media (max-width: 650px) {
+    .tracker-form, #charts-container, table { width: 100%; }
+    button { margin: 10px 4px; width: 40%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Habit Accountability Tracker</h1>
+  <p>For Suraj & Sumit</p>
+  <div class="user-toggle">
+    <button id="user-suraj" class="active">Suraj</button>
+    <button id="user-sumit">Sumit</button>
+  </div>
+</header>
+
+<div class="tracker-form">
+  <div class="status" id="status-msg"></div>
+  <form id="habit-form">
+    <label for="screentime">Screen Time (hours, less is better)</label>
+    <input type="number" id="screentime" min="0" step="0.1" />
+
+    <label for="studying">Studying (hours)</label>
+    <input type="number" id="studying" min="0" step="0.1" />
+
+    <label for="reading">Reading (minutes)</label>
+    <input type="number" id="reading" min="0" step="1" />
+
+    <label for="fitness">Fitness (minutes)</label>
+    <input type="number" id="fitness" min="0" step="1" />
+
+    <button type="submit">Save Today's Progress</button>
+  </form>
+</div>
+
+<div id="progress-bars" style="max-width: 600px; margin: 0 auto 40px auto;">
+  <h3>Today's Progress for <span id="current-user-name">Suraj</span></h3>
+  <div>
+    <label>Screen Time Progress (Goal ≤ 4 hours)</label>
+    <div class="progress-bar"><div id="progress-screentime" class="progress-fill"></div></div>
+    <div class="progress-label" id="label-screentime">0%</div>
+  </div>
+  <div>
+    <label>Studying Progress (Goal ≥ 1 hour)</label>
+    <div class="progress-bar"><div id="progress-studying" class="progress-fill"></div></div>
+    <div class="progress-label" id="label-studying">0%</div>
+  </div>
+  <div>
+    <label>Reading Progress (Goal ≥ 30 minutes)</label>
+    <div class="progress-bar"><div id="progress-reading" class="progress-fill"></div></div>
+    <div class="progress-label" id="label-reading">0%</div>
+  </div>
+  <div>
+    <label>Fitness Progress (Goal ≥ 30 minutes)</label>
+    <div class="progress-bar"><div id="progress-fitness" class="progress-fill"></div></div>
+    <div class="progress-label" id="label-fitness">0%</div>
+  </div>
+</div>
+
+<div id="charts-container">
+  <canvas id="line-chart" height="200"></canvas>
+  <canvas id="bar-chart" height="200"></canvas>
+</div>
+
+<table id="weekly-summary">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>User</th>
+      <th>Screen Time (h)</th>
+      <th>Studying (h)</th>
+      <th>Reading (min)</th>
+      <th>Fitness (min)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <!-- Filled dynamically -->
+  </tbody>
+</table>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const userNames = ['Suraj', 'Sumit'];
+  const goals = {
+    screentime_max: 4,
+    studying_min: 1,
+    reading_min: 30,
+    fitness_min: 30
+  };
+  let selectedUser = 'Suraj';
+
+  // Data structure: store entries by date and user
+  // Example entry: {date: '2025-11-17', user: 'Suraj', screentime: 3.5, studying: 1.5, reading: 40, fitness: 30}
+  let habitData = [];
+
+  // Helper to format date as YYYY-MM-DD
+  function formatDate(date) {
+    return date.toISOString().split('T')[0];
+  }
+
+  // Load today's data for the selected user and update UI
+  function loadTodayData() {
+    const today = formatDate(new Date());
+    const entry = habitData.find(e => e.date === today && e.user === selectedUser);
+    document.getElementById('screentime').value = entry ? entry.screentime : '';
+    document.getElementById('studying').value = entry ? entry.studying : '';
+    document.getElementById('reading').value = entry ? entry.reading : '';
+    document.getElementById('fitness').value = entry ? entry.fitness : '';
+    updateProgressBars();
+  }
+
+  // Calculate progress percentages for today for the selected user
+  function calculateProgress(entry) {
+    if(!entry) return { screentime: 0, studying: 0, reading: 0, fitness: 0 };
+    return {
+      screentime: Math.min(1, goals.screentime_max / entry.screentime || 0),
+      studying: Math.min(1, (entry.studying || 0) / goals.studying_min),
+      reading: Math.min(1, (entry.reading || 0) / goals.reading_min),
+      fitness: Math.min(1, (entry.fitness || 0) / goals.fitness_min)
+    };
+  }
+
+  // Update progress bars and labels
+  function updateProgressBars() {
+    const today = formatDate(new Date());
+    const entry = habitData.find(e => e.date === today && e.user === selectedUser);
+    const prog = calculateProgress(entry);
+
+    function updateBar(idBase, value) {
+      const fill = document.getElementById('progress-' + idBase);
+      const label = document.getElementById('label-' + idBase);
+      const percentage = Math.round(value * 100);
+      fill.style.width = percentage + '%';
+      label.textContent = percentage + '%';
+      // Special coloring criteria
+      if(idBase === 'screentime') {
+        fill.style.backgroundColor = (percentage === 100) ? '#2ecc71' : '#e74c3c';
+      } else {
+        fill.style.backgroundColor = (percentage === 100) ? '#2ecc71' : '#3498db';
+      }
+    }
+    updateBar('screentime', prog.screentime);
+    updateBar('studying', prog.studying);
+    updateBar('reading', prog.reading);
+    updateBar('fitness', prog.fitness);
+
+    document.getElementById('current-user-name').textContent = selectedUser;
+  }
+
+  // Update weekly summary table
+  function updateWeeklySummary() {
+    const tbody = document.querySelector('#weekly-summary tbody');
+    tbody.innerHTML = '';
+    const today = new Date();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(today.getDate() - 6);
+
+    // Filter data for last 7 days
+    const recentData = habitData.filter(entry => {
+      const entryDate = new Date(entry.date);
+      return entryDate >= weekAgo && entryDate <= today;
+    });
+    // Sort by date ascending
+    recentData.sort((a,b) => new Date(a.date) - new Date(b.date));
+
+    recentData.forEach(entry => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${entry.date}</td>
+        <td>${entry.user}</td>
+        <td>${entry.screentime ?? '-'}</td>
+        <td>${entry.studying ?? '-'}</td>
+        <td>${entry.reading ?? '-'}</td>
+        <td>${entry.fitness ?? '-'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // Update charts (line and bar)
+  let lineChart, barChart;
+  function updateCharts() {
+    const ctxLine = document.getElementById('line-chart').getContext('2d');
+    const ctxBar = document.getElementById('bar-chart').getContext('2d');
+
+    const today = new Date();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(today.getDate() - 6);
+
+    // Dates array for the last 7 days
+    const dateLabels = [];
+    for(let d = new Date(weekAgo); d <= today; d.setDate(d.getDate()+1)) {
+      dateLabels.push(formatDate(new Date(d)));
+    }
+
+    // Prepare datasets for line chart for each habit and each user
+    function getHabitDataForUser(habit, user) {
+      return dateLabels.map(date => {
+        const entry = habitData.find(e => e.date === date && e.user === user);
+        return entry ? (entry[habit] || 0) : 0;
+      });
+    }
+
+    // Remove old charts if present
+    if(lineChart) lineChart.destroy();
+    if(barChart) barChart.destroy();
+
+    // Line chart for daily habit data
+    lineChart = new Chart(ctxLine, {
+      type: 'line',
+      data: {
+        labels: dateLabels,
+        datasets: [
+          { label: 'Suraj Screentime', data: getHabitDataForUser('screentime', 'Suraj'), borderColor: 'rgba(231, 76, 60, 1)', fill: false, tension: 0.3},
+          { label: 'Sumit Screentime', data: getHabitDataForUser('screentime', 'Sumit'), borderColor: 'rgba(192, 57, 43, 0.7)', fill: false, borderDash: [5,5], tension: 0.3},
+          { label: 'Suraj Studying', data: getHabitDataForUser('studying', 'Suraj'), borderColor: 'rgba(52, 152, 219, 1)', fill: false, tension: 0.3},
+          { label: 'Sumit Studying', data: getHabitDataForUser('studying', 'Sumit'), borderColor: 'rgba(41, 128, 185, 0.7)', fill: false, borderDash: [5,5], tension: 0.3},
+          { label: 'Suraj Reading', data: getHabitDataForUser('reading', 'Suraj'), borderColor: 'rgba(46, 204, 113, 1)', fill: false, tension: 0.3},
+          { label: 'Sumit Reading', data: getHabitDataForUser('reading', 'Sumit'), borderColor: 'rgba(39, 174, 96, 0.7)', fill: false, borderDash: [5,5], tension: 0.3},
+          { label: 'Suraj Fitness', data: getHabitDataForUser('fitness', 'Suraj'), borderColor: 'rgba(155, 89, 182, 1)', fill: false, tension: 0.3},
+          { label: 'Sumit Fitness', data: getHabitDataForUser('fitness', 'Sumit'), borderColor: 'rgba(142, 68, 173, 0.7)', fill: false, borderDash: [5,5], tension: 0.3},
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          tooltip: { mode: 'index', intersect: false }
+        },
+        interaction: {
+          mode: 'nearest',
+          axis: 'x',
+          intersect: false
+        },
+        scales: {
+          y: { beginAtZero: true },
+          x: { title: { display: true, text: 'Date' } }
+        }
+      }
+    });
+
+    // Bar chart showing weekly average
+    function average(arr) {
+      if(arr.length === 0) return 0;
+      return arr.reduce((a,b) => a+b, 0)/arr.length;
+    }
+
+    const averages = userNames.map(user => {
+      return {
+        user,
+        screentime: average(getHabitDataForUser('screentime', user)),
+        studying: average(getHabitDataForUser('studying', user)),
+        reading: average(getHabitDataForUser('reading', user)),
+        fitness: average(getHabitDataForUser('fitness', user))
+      };
+    });
+
+    barChart = new Chart(ctxBar, {
+      type: 'bar',
+      data: {
+        labels: ['Screen Time (h)', 'Studying (h)', 'Reading (min)', 'Fitness (min)'],
+        datasets: [
+          {
+            label: 'Suraj',
+            data: [averages[0].screentime, averages[0].studying, averages[0].reading, averages[0].fitness],
+            backgroundColor: 'rgba(52, 152, 219, 0.7)'
+          },
+          {
+            label: 'Sumit',
+            data: [averages[1].screentime, averages[1].studying, averages[1].reading, averages[1].fitness],
+            backgroundColor: 'rgba(41, 128, 185, 0.7)'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  // Save or update today's data for selected user
+  function saveTodayData(data) {
+    const today = formatDate(new Date());
+    const index = habitData.findIndex(e => e.date === today && e.user === selectedUser);
+    if(index >= 0) {
+      habitData[index] = { date: today, user: selectedUser, ...data };
+    } else {
+      habitData.push({ date: today, user: selectedUser, ...data });
+    }
+  }
+
+  // Form submission handler
+  document.getElementById('habit-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const data = {
+      screentime: parseFloat(document.getElementById('screentime').value) || 0,
+      studying: parseFloat(document.getElementById('studying').value) || 0,
+      reading: parseFloat(document.getElementById('reading').value) || 0,
+      fitness: parseFloat(document.getElementById('fitness').value) || 0
+    };
+    saveTodayData(data);
+    updateProgressBars();
+    updateWeeklySummary();
+    updateCharts();
+
+    const status = document.getElementById('status-msg');
+    status.textContent = 'Progress saved for ' + selectedUser + ' on ' + formatDate(new Date());
+    setTimeout(() => { status.textContent = ''; }, 3000);
+  });
+
+  // User toggle buttons
+  document.getElementById('user-suraj').addEventListener('click', () => {
+    selectedUser = 'Suraj';
+    document.getElementById('user-suraj').classList.add('active');
+    document.getElementById('user-sumit').classList.remove('active');
+    loadTodayData();
+  });
+
+  document.getElementById('user-sumit').addEventListener('click', () => {
+    selectedUser = 'Sumit';
+    document.getElementById('user-sumit').classList.add('active');
+    document.getElementById('user-suraj').classList.remove('active');
+    loadTodayData();
+  });
+
+  // Initialize
+  loadTodayData();
+  updateWeeklySummary();
+  updateCharts();
+</script>
+
+</body>
+</html>
